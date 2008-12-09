@@ -56,6 +56,7 @@
 #ifdef DLZ
 #include <dns/dlz.h>
 #endif
+#include <dns/dynamic_db.h>
 #include <dns/forward.h>
 #include <dns/journal.h>
 #include <dns/keytable.h>
@@ -849,6 +850,67 @@ configure_peer(const cfg_obj_t *cpeer, isc_mem_t *mctx, dns_peer_t **peerp) {
 }
 
 static isc_result_t
+configure_dynamic_db(const cfg_obj_t *dynamic_db, isc_mem_t *mctx,
+		     dns_view_t *view)
+{
+	isc_result_t result;
+	const cfg_obj_t *obj;
+	const cfg_obj_t *options;
+	const cfg_listelt_t *element;
+	const char *name;
+	const char *libname;
+	const char **argv = NULL;
+	unsigned int i;
+	unsigned int len;
+
+	/* Get the name of the database. */
+	obj = cfg_tuple_get(dynamic_db, "name");
+	name = cfg_obj_asstring(obj);
+
+	/* Get options. */
+	options = cfg_tuple_get(dynamic_db, "options");
+
+	/* Get library name. */
+	obj = NULL;
+	CHECK(cfg_map_get(options, "library", &obj));
+	libname = cfg_obj_asstring(obj);
+
+	/* Create a list of arguments. */
+	obj = NULL;
+	CHECK(cfg_map_get(options, "arg", &obj));
+
+	len = cfg_list_length(obj, isc_boolean_false);
+	if (len == 0) {
+		argv = NULL;
+	} else {
+		len++;
+		argv = isc_mem_allocate(mctx, len * sizeof(const char *));
+		if (argv == NULL)
+			CHECK(ISC_R_NOMEMORY);
+	}
+	for (element = cfg_list_first(obj), i = 0;
+	     element != NULL;
+	     element = cfg_list_next(element), i++)
+	{
+		REQUIRE(i < len);
+
+		obj = cfg_listelt_value(element);
+		argv[i] = cfg_obj_asstring(obj);
+	}
+	REQUIRE(i < len);
+	argv[i] = NULL;
+
+	CHECK(dns_dynamic_db_load(libname, name, mctx, argv, view));
+
+cleanup:
+	if (argv != NULL)
+		isc_mem_free(mctx, argv);
+
+	return result;
+}
+
+
+static isc_result_t
 disable_algorithms(const cfg_obj_t *disabled, dns_resolver_t *resolver) {
 	isc_result_t result;
 	const cfg_obj_t *algorithms;
@@ -999,6 +1061,7 @@ configure_view(dns_view_t *view, const cfg_obj_t *config,
 	unsigned int dlzargc;
 	char **dlzargv;
 #endif
+	const cfg_obj_t *dynamic_db_list;
 	const cfg_obj_t *disabled;
 	const cfg_obj_t *obj;
 	const cfg_listelt_t *element;
@@ -1169,6 +1232,22 @@ configure_view(dns_view_t *view, const cfg_obj_t *config,
 		}
 	}
 #endif
+
+	/*
+	 * Configure dynamic databases.
+	 */
+	dynamic_db_list = NULL;
+	if (voptions != NULL)
+		(void)cfg_map_get(voptions, "dynamic-db", &dynamic_db_list);
+	else
+		(void)cfg_map_get(config, "dynamic-db", &dynamic_db_list);
+	for (element = cfg_list_first(dynamic_db_list);
+	     element != NULL;
+	     element = cfg_list_next(element))
+	{
+		obj = cfg_listelt_value(element);
+		CHECK(configure_dynamic_db(obj, mctx, view));
+	}
 
 	/*
 	 * Configure the view's cache.  Try to reuse an existing
