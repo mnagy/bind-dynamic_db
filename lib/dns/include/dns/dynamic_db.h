@@ -26,5 +26,6 @@ isc_result_t dns_dynamic_db_load(const char *libname, const char *name,
 				 isc_mem_t *mctx, const char * const *argv,
 				 dns_view_t *view);
 
+isc_result_t dns_dynamic_db_cleanup(void);
 
 #endif

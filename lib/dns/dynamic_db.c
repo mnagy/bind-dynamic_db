@@ -16,6 +16,9 @@
  */
 
 
+#include <isc/mem.h>
+#include <isc/mutex.h>
+#include <isc/once.h>
 #include <isc/result.h>
 #include <isc/types.h>
 #include <isc/util.h>
@@ -37,18 +40,68 @@
 		if (result != ISC_R_SUCCESS) goto cleanup;	\
 	} while (0)
 
+
 typedef isc_result_t (*register_func_t)(isc_mem_t *mctx, const char *name,
 		const char * const *argv, dns_view_t *view);
+typedef void (*destroy_func_t)(void);
+
+typedef struct dyndb_implementation dyndb_implementation_t;
+
+struct dyndb_implementation {
+	isc_mem_t			*mctx;
+	void				*handle;
+	register_func_t			register_function;
+	destroy_func_t			destroy_function;
+	LINK(dyndb_implementation_t)	link;
+};
+
+/* List of implementations. Locked by dyndb_lock. */
+static LIST(dyndb_implementation_t) dyndb_implementations;
+/* Locks dyndb_implementations. */
+static isc_mutex_t dyndb_lock;
+static isc_once_t once = ISC_ONCE_INIT;
+
+static void
+dyndb_initialize(void) {
+	RUNTIME_CHECK(isc_mutex_init(&dyndb_lock) == ISC_R_SUCCESS);
+	INIT_LIST(dyndb_implementations);
+}
+
 
 #if HAVE_DLOPEN
 static isc_result_t
-load_library(const char *filename, register_func_t *register_function)
+load_symbol(void *handle, const char *symbol_name, void **symbol)
 {
-	isc_result_t result;
-	void *handle;	/* XXX: We don't keep the handle around. Should we? */
 	const char *errmsg;
 
-	REQUIRE(register_function != NULL && *register_function == NULL);
+	REQUIRE(handle != NULL);
+	REQUIRE(symbol != NULL && *symbol == NULL);
+
+	*symbol = dlsym(handle, symbol_name);
+	if (*symbol == NULL) {
+		errmsg = dlerror();
+		if (errmsg == NULL)
+			errmsg = "returned function pointer is NULL";
+		isc_log_write(dns_lctx, DNS_LOGCATEGORY_DATABASE,
+			      DNS_LOGMODULE_DYNDB, ISC_LOG_ERROR,
+			      "Failed to lookup symbol %s: %s",
+			      symbol_name, errmsg);
+		return ISC_R_FAILURE;
+	}
+	dlerror();
+
+	return ISC_R_SUCCESS;
+}
+
+static isc_result_t
+load_library(isc_mem_t *mctx, const char *filename, dyndb_implementation_t **imp)
+{
+	isc_result_t result;
+	void *handle;
+	register_func_t register_function = NULL;
+	destroy_func_t destroy_function = NULL;
+
+	REQUIRE(imp != NULL && *imp == NULL);
 
 	handle = dlopen(filename, RTLD_LAZY);
 	if (handle == NULL) {
@@ -60,49 +113,106 @@ load_library(const char *filename, register_func_t *register_function)
 	}
 	dlerror();
 
-	*register_function = dlsym(handle, "dynamic_driver_init");
-	if (*register_function == NULL) {
-		errmsg = dlerror();
-		if (errmsg == NULL)
-			errmsg = "returned function pointer is NULL";
-		isc_log_write(dns_lctx, DNS_LOGCATEGORY_DATABASE,
-			      DNS_LOGMODULE_DYNDB, ISC_LOG_ERROR,
-			      "Failed to lookup symbol dynamic_driver_init from %s: %s",
-			      filename, errmsg);
-		CHECK(ISC_R_FAILURE);
-	}
-	dlerror();
+	CHECK(load_symbol(handle, "dynamic_driver_init", (void **)&register_function));
+	CHECK(load_symbol(handle, "dynamic_driver_destroy", (void **)&destroy_function));
+
+	*imp = isc_mem_get(mctx, sizeof(dyndb_implementation_t));
+	if (*imp == NULL)
+		CHECK(ISC_R_NOMEMORY);
+
+	(*imp)->mctx = NULL;
+	isc_mem_attach(mctx, &((*imp)->mctx));
+	(*imp)->handle = handle;
+	(*imp)->register_function = register_function;
+	(*imp)->destroy_function = destroy_function;
+	INIT_LINK(*imp, link);
 
 	return ISC_R_SUCCESS;
 
 cleanup:
 	if (handle != NULL)
 		dlclose(handle);
-	*register_function = NULL;
 
 	return result;
 }
-#else
-static isc_result_t
-load_library(const char *filename, register_func_t *register_function)
+
+static void
+unload_library(dyndb_implementation_t **imp)
 {
+	REQUIRE(imp != NULL && *imp != NULL);
+
+	dlclose((*imp)->handle);
+
+	isc_mem_putanddetach(&((*imp)->mctx), *imp, sizeof(dyndb_implementation_t));
+
+	*imp = NULL;
+}
+
+#else	/* HAVE_DLOPEN */
+static isc_result_t
+load_library(isc_mem_t *mctx, const char *filename, dyndb_implementation_t **imp)
+{
+	UNUSED(mctx);
 	UNUSED(filename);
-	UNUSED(register_function);
+	UNUSED(imp);
 
 	return ISC_R_NOTIMPLEMENTED;
 }
-#endif
+
+static void
+unload_library(dyndb_implementation_t **imp)
+{
+	REQUIRE(imp != NULL && *imp != NULL);
+
+	isc_mem_putanddetach(&((*imp)->mctx), *imp, sizeof(dyndb_implementation_t));
+
+	*imp = NULL;
+}
+#endif	/* HAVE_DLOPEN */
 
 isc_result_t
 dns_dynamic_db_load(const char *libname, const char *name, isc_mem_t *mctx,
 		    const char * const *argv, dns_view_t *view)
 {
 	isc_result_t result;
-	register_func_t register_func = NULL;
+	dyndb_implementation_t *implementation = NULL;
 
-	CHECK(load_library(libname, &register_func));
-	CHECK(register_func(mctx, name, argv, view));
+	RUNTIME_CHECK(isc_once_do(&once, dyndb_initialize) == ISC_R_SUCCESS);
+
+	CHECK(load_library(mctx, libname, &implementation));
+	CHECK(implementation->register_function(mctx, name, argv, view));
+
+	LOCK(&dyndb_lock);
+	APPEND(dyndb_implementations, implementation, link);
+	UNLOCK(&dyndb_lock);
+
+	return ISC_R_SUCCESS;
 
 cleanup:
+	if (implementation != NULL)
+		unload_library(&implementation);
+
 	return result;
+}
+
+isc_result_t
+dns_dynamic_db_cleanup(void)
+{
+	dyndb_implementation_t *elem;
+	dyndb_implementation_t *next;
+
+	RUNTIME_CHECK(isc_once_do(&once, dyndb_initialize) == ISC_R_SUCCESS);
+
+	LOCK(&dyndb_lock);
+	elem = HEAD(dyndb_implementations);
+	while (elem != NULL) {
+		next = NEXT(elem, link);
+		UNLINK(dyndb_implementations, elem, link);
+		elem->destroy_function();
+		unload_library(&elem);
+		elem = next;
+	}
+	UNLOCK(&dyndb_lock);
+
+	isc_mutex_destroy(&dyndb_lock);
 }
