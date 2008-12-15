@@ -16,6 +16,8 @@
  */
 
 
+#include <config.h>
+
 #include <isc/mem.h>
 #include <isc/mutex.h>
 #include <isc/once.h>
@@ -28,10 +30,7 @@
 #include <dns/types.h>
 
 
-/* TODO: Adjust configure.ac accordingly. */
-#define HAVE_DLOPEN 1
-
-#if HAVE_DLOPEN
+#if HAVE_DLFCN_H
 #include <dlfcn.h>
 #endif
 
@@ -68,7 +67,7 @@ dyndb_initialize(void) {
 }
 
 
-#if HAVE_DLOPEN
+#if HAVE_DLFCN_H
 static isc_result_t
 load_symbol(void *handle, const char *symbol_name, void **symbol)
 {
@@ -148,7 +147,7 @@ unload_library(dyndb_implementation_t **imp)
 	*imp = NULL;
 }
 
-#else	/* HAVE_DLOPEN */
+#else	/* HAVE_DLFCN_H */
 static isc_result_t
 load_library(isc_mem_t *mctx, const char *filename, dyndb_implementation_t **imp)
 {
@@ -168,7 +167,7 @@ unload_library(dyndb_implementation_t **imp)
 
 	*imp = NULL;
 }
-#endif	/* HAVE_DLOPEN */
+#endif	/* HAVE_DLFCN_H */
 
 isc_result_t
 dns_dynamic_db_load(const char *libname, const char *name, isc_mem_t *mctx,
