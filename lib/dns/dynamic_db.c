@@ -83,7 +83,7 @@ load_symbol(void *handle, const char *symbol_name, void **symbol)
 			errmsg = "returned function pointer is NULL";
 		isc_log_write(dns_lctx, DNS_LOGCATEGORY_DATABASE,
 			      DNS_LOGMODULE_DYNDB, ISC_LOG_ERROR,
-			      "Failed to lookup symbol %s: %s",
+			      "failed to lookup symbol %s: %s",
 			      symbol_name, errmsg);
 		return ISC_R_FAILURE;
 	}
@@ -106,7 +106,7 @@ load_library(isc_mem_t *mctx, const char *filename, dyndb_implementation_t **imp
 	if (handle == NULL) {
 		isc_log_write(dns_lctx, DNS_LOGCATEGORY_DATABASE,
 			      DNS_LOGMODULE_DYNDB, ISC_LOG_ERROR,
-			      "Failed to dynamically load driver '%s': %s",
+			      "failed to dynamically load driver '%s': %s",
 			      filename, dlerror());
 		CHECK(ISC_R_FAILURE);
 	}
@@ -154,6 +154,10 @@ load_library(isc_mem_t *mctx, const char *filename, dyndb_implementation_t **imp
 	UNUSED(mctx);
 	UNUSED(filename);
 	UNUSED(imp);
+
+	isc_log_write(dns_lctx, DNS_LOGCATEGORY_DATABASE, DNS_LOGMODULE_DYNDB,
+		      ISC_LOG_ERROR,
+		      "dynamic database support is not implemented")
 
 	return ISC_R_NOTIMPLEMENTED;
 }
