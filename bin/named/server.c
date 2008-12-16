@@ -877,16 +877,21 @@ configure_dynamic_db(const cfg_obj_t *dynamic_db, isc_mem_t *mctx,
 
 	/* Create a list of arguments. */
 	obj = NULL;
-	CHECK(cfg_map_get(options, "arg", &obj));
+	result = cfg_map_get(options, "arg", &obj);
+	if (result == ISC_R_NOTFOUND)
+		len = 0;
+	else if (result == ISC_R_SUCCESS)
+		len = cfg_list_length(obj, isc_boolean_false);
+	else
+		goto cleanup;
 
-	len = cfg_list_length(obj, isc_boolean_false);
-	if (len == 0) {
-		argv = NULL;
-	} else {
-		len++;
-		argv = isc_mem_allocate(mctx, len * sizeof(const char *));
-		if (argv == NULL)
-			CHECK(ISC_R_NOMEMORY);
+	/* Account for the last terminating NULL. */
+	len++;
+
+	argv = isc_mem_allocate(mctx, len * sizeof(const char *));
+	if (argv == NULL) {
+		result = ISC_R_NOMEMORY;
+		goto cleanup;
 	}
 	for (element = cfg_list_first(obj), i = 0;
 	     element != NULL;
