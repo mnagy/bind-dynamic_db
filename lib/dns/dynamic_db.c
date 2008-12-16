@@ -69,15 +69,16 @@ dyndb_initialize(void) {
 
 #if HAVE_DLFCN_H
 static isc_result_t
-load_symbol(void *handle, const char *symbol_name, void **symbol)
+load_symbol(void *handle, const char *symbol_name, void **symbolp)
 {
 	const char *errmsg;
+	void *symbol;
 
 	REQUIRE(handle != NULL);
-	REQUIRE(symbol != NULL && *symbol == NULL);
+	REQUIRE(symbolp != NULL && *symbolp == NULL);
 
-	*symbol = dlsym(handle, symbol_name);
-	if (*symbol == NULL) {
+	symbol = dlsym(handle, symbol_name);
+	if (symbol == NULL) {
 		errmsg = dlerror();
 		if (errmsg == NULL)
 			errmsg = "returned function pointer is NULL";
@@ -89,18 +90,21 @@ load_symbol(void *handle, const char *symbol_name, void **symbol)
 	}
 	dlerror();
 
+	*symbolp = symbol;
+
 	return ISC_R_SUCCESS;
 }
 
 static isc_result_t
-load_library(isc_mem_t *mctx, const char *filename, dyndb_implementation_t **imp)
+load_library(isc_mem_t *mctx, const char *filename, dyndb_implementation_t **impp)
 {
 	isc_result_t result;
 	void *handle;
+	dyndb_implementation_t *imp;
 	register_func_t register_function = NULL;
 	destroy_func_t destroy_function = NULL;
 
-	REQUIRE(imp != NULL && *imp == NULL);
+	REQUIRE(impp != NULL && *impp == NULL);
 
 	handle = dlopen(filename, RTLD_LAZY);
 	if (handle == NULL) {
@@ -108,23 +112,30 @@ load_library(isc_mem_t *mctx, const char *filename, dyndb_implementation_t **imp
 			      DNS_LOGMODULE_DYNDB, ISC_LOG_ERROR,
 			      "failed to dynamically load driver '%s': %s",
 			      filename, dlerror());
-		CHECK(ISC_R_FAILURE);
+		result = ISC_R_FAILURE;
+		goto cleanup;
 	}
 	dlerror();
 
-	CHECK(load_symbol(handle, "dynamic_driver_init", (void **)&register_function));
-	CHECK(load_symbol(handle, "dynamic_driver_destroy", (void **)&destroy_function));
+	CHECK(load_symbol(handle, "dynamic_driver_init",
+			  (void **)&register_function));
+	CHECK(load_symbol(handle, "dynamic_driver_destroy",
+			  (void **)&destroy_function));
 
-	*imp = isc_mem_get(mctx, sizeof(dyndb_implementation_t));
-	if (*imp == NULL)
-		CHECK(ISC_R_NOMEMORY);
+	imp = isc_mem_get(mctx, sizeof(dyndb_implementation_t));
+	if (imp == NULL) {
+		result = ISC_R_NOMEMORY;
+		goto cleanup;
+	}
 
-	(*imp)->mctx = NULL;
-	isc_mem_attach(mctx, &((*imp)->mctx));
-	(*imp)->handle = handle;
-	(*imp)->register_function = register_function;
-	(*imp)->destroy_function = destroy_function;
-	INIT_LINK(*imp, link);
+	imp->mctx = NULL;
+	isc_mem_attach(mctx, &imp->mctx);
+	imp->handle = handle;
+	imp->register_function = register_function;
+	imp->destroy_function = destroy_function;
+	INIT_LINK(imp, link);
+
+	*impp = imp;
 
 	return ISC_R_SUCCESS;
 
@@ -136,24 +147,28 @@ cleanup:
 }
 
 static void
-unload_library(dyndb_implementation_t **imp)
+unload_library(dyndb_implementation_t **impp)
 {
-	REQUIRE(imp != NULL && *imp != NULL);
+	dyndb_implementation_t *imp;
 
-	dlclose((*imp)->handle);
+	REQUIRE(impp != NULL && *impp != NULL);
 
-	isc_mem_putanddetach(&((*imp)->mctx), *imp, sizeof(dyndb_implementation_t));
+	imp = *impp;
 
-	*imp = NULL;
+	dlclose(imp->handle);
+
+	isc_mem_putanddetach(&imp->mctx, imp, sizeof(dyndb_implementation_t));
+
+	*impp = NULL;
 }
 
 #else	/* HAVE_DLFCN_H */
 static isc_result_t
-load_library(isc_mem_t *mctx, const char *filename, dyndb_implementation_t **imp)
+load_library(isc_mem_t *mctx, const char *filename, dyndb_implementation_t **impp)
 {
 	UNUSED(mctx);
 	UNUSED(filename);
-	UNUSED(imp);
+	UNUSED(impp);
 
 	isc_log_write(dns_lctx, DNS_LOGCATEGORY_DATABASE, DNS_LOGMODULE_DYNDB,
 		      ISC_LOG_ERROR,
@@ -163,13 +178,17 @@ load_library(isc_mem_t *mctx, const char *filename, dyndb_implementation_t **imp
 }
 
 static void
-unload_library(dyndb_implementation_t **imp)
+unload_library(dyndb_implementation_t **impp)
 {
-	REQUIRE(imp != NULL && *imp != NULL);
+	dyndb_implementation_t *imp;
 
-	isc_mem_putanddetach(&((*imp)->mctx), *imp, sizeof(dyndb_implementation_t));
+	REQUIRE(impp != NULL && *impp != NULL);
 
-	*imp = NULL;
+	imp = *impp;
+
+	isc_mem_putanddetach(&imp->mctx, imp, sizeof(dyndb_implementation_t));
+
+	*impp = NULL;
 }
 #endif	/* HAVE_DLFCN_H */
 
