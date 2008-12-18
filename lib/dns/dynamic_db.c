@@ -217,7 +217,7 @@ cleanup:
 	return result;
 }
 
-isc_result_t
+void
 dns_dynamic_db_cleanup(void)
 {
 	dyndb_implementation_t *elem;
