@@ -41,7 +41,8 @@
 
 
 typedef isc_result_t (*register_func_t)(isc_mem_t *mctx, const char *name,
-		const char * const *argv, dns_view_t *view);
+		const char * const *argv, dns_view_t *view,
+		dns_zonemgr_t *zmgr);
 typedef void (*destroy_func_t)(void);
 
 typedef struct dyndb_implementation dyndb_implementation_t;
@@ -192,7 +193,8 @@ unload_library(dyndb_implementation_t **impp)
 
 isc_result_t
 dns_dynamic_db_load(const char *libname, const char *name, isc_mem_t *mctx,
-		    const char * const *argv, dns_view_t *view)
+		    const char * const *argv, dns_view_t *view,
+		    dns_zonemgr_t *zmgr)
 {
 	isc_result_t result;
 	dyndb_implementation_t *implementation = NULL;
@@ -200,7 +202,7 @@ dns_dynamic_db_load(const char *libname, const char *name, isc_mem_t *mctx,
 	RUNTIME_CHECK(isc_once_do(&once, dyndb_initialize) == ISC_R_SUCCESS);
 
 	CHECK(load_library(mctx, libname, &implementation));
-	CHECK(implementation->register_function(mctx, name, argv, view));
+	CHECK(implementation->register_function(mctx, name, argv, view, zmgr));
 
 	LOCK(&dyndb_lock);
 	APPEND(dyndb_implementations, implementation, link);

@@ -20,12 +20,13 @@
 #define DYNAMIC_DB_H
 
 #include <isc/types.h>
+
 #include <dns/types.h>
 
 isc_result_t dns_dynamic_db_load(const char *libname, const char *name,
 				 isc_mem_t *mctx, const char * const *argv,
-				 dns_view_t *view);
+				 dns_view_t *view, dns_zonemgr_t *zmgr);
 
-isc_result_t dns_dynamic_db_cleanup(void);
+void dns_dynamic_db_cleanup(void);
 
 #endif

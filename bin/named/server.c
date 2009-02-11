@@ -851,7 +851,7 @@ configure_peer(const cfg_obj_t *cpeer, isc_mem_t *mctx, dns_peer_t **peerp) {
 
 static isc_result_t
 configure_dynamic_db(const cfg_obj_t *dynamic_db, isc_mem_t *mctx,
-		     dns_view_t *view)
+		     dns_view_t *view, dns_zonemgr_t *zmgr)
 {
 	isc_result_t result;
 	const cfg_obj_t *obj;
@@ -905,7 +905,7 @@ configure_dynamic_db(const cfg_obj_t *dynamic_db, isc_mem_t *mctx,
 	REQUIRE(i < len);
 	argv[i] = NULL;
 
-	CHECK(dns_dynamic_db_load(libname, name, mctx, argv, view));
+	CHECK(dns_dynamic_db_load(libname, name, mctx, argv, view, zmgr));
 
 cleanup:
 	if (argv != NULL)
@@ -1251,7 +1251,7 @@ configure_view(dns_view_t *view, const cfg_obj_t *config,
 	     element = cfg_list_next(element))
 	{
 		obj = cfg_listelt_value(element);
-		CHECK(configure_dynamic_db(obj, mctx, view));
+		CHECK(configure_dynamic_db(obj, mctx, view, ns_g_server->zonemgr));
 	}
 
 	/*
