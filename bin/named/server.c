@@ -851,7 +851,7 @@ configure_peer(const cfg_obj_t *cpeer, isc_mem_t *mctx, dns_peer_t **peerp) {
 
 static isc_result_t
 configure_dynamic_db(const cfg_obj_t *dynamic_db, isc_mem_t *mctx,
-		     dns_view_t *view, dns_zonemgr_t *zmgr)
+		     const dns_dyndb_arguments_t *dyndb_args)
 {
 	isc_result_t result;
 	const cfg_obj_t *obj;
@@ -905,7 +905,7 @@ configure_dynamic_db(const cfg_obj_t *dynamic_db, isc_mem_t *mctx,
 	REQUIRE(i < len);
 	argv[i] = NULL;
 
-	CHECK(dns_dynamic_db_load(libname, name, mctx, argv, view, zmgr));
+	CHECK(dns_dynamic_db_load(libname, name, mctx, argv, dyndb_args));
 
 cleanup:
 	if (argv != NULL)
@@ -1246,12 +1246,27 @@ configure_view(dns_view_t *view, const cfg_obj_t *config,
 		(void)cfg_map_get(voptions, "dynamic-db", &dynamic_db_list);
 	else
 		(void)cfg_map_get(config, "dynamic-db", &dynamic_db_list);
-	for (element = cfg_list_first(dynamic_db_list);
-	     element != NULL;
-	     element = cfg_list_next(element))
-	{
-		obj = cfg_listelt_value(element);
-		CHECK(configure_dynamic_db(obj, mctx, view, ns_g_server->zonemgr));
+	element = cfg_list_first(dynamic_db_list);
+	if (element != NULL) {
+		dns_dyndb_arguments_t *args;
+
+		args = dns_dyndb_arguments_create(mctx);
+		if (args == NULL) {
+			result = ISC_R_NOMEMORY;
+			goto cleanup;
+		}
+		dns_dyndb_set_view(args, view);
+		dns_dyndb_set_zonemgr(args, ns_g_server->zonemgr);
+		dns_dyndb_set_task(args, ns_g_server->task);
+		dns_dyndb_set_timermgr(args, ns_g_timermgr);
+		while (element != NULL) {
+			obj = cfg_listelt_value(element);
+			CHECK(configure_dynamic_db(obj, mctx, args));
+
+			element = cfg_list_next(element);
+		}
+
+		dns_dyndb_arguments_destroy(mctx, args);
 	}
 
 	/*

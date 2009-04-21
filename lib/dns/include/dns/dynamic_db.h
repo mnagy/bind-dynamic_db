@@ -22,10 +22,29 @@
 
 #include <dns/types.h>
 
+/*
+ * TODO:
+ * Reformat the prototypes.
+ * Add annotated comments.
+ */
+
 isc_result_t dns_dynamic_db_load(const char *libname, const char *name,
 				 isc_mem_t *mctx, const char * const *argv,
-				 dns_view_t *view, dns_zonemgr_t *zmgr);
+				 dns_dyndb_arguments_t *dyndb_args);
 
 void dns_dynamic_db_cleanup(void);
+
+dns_dyndb_arguments_t *dns_dyndb_arguments_create(isc_mem_t *mctx);
+void dns_dyndb_arguments_destroy(isc_mem_t *mctx, dns_dyndb_arguments_t *args);
+
+void dns_dyndb_set_view(dns_dyndb_arguments_t *args, dns_view_t *view);
+dns_view_t *dns_dyndb_get_view(dns_dyndb_arguments_t *args);
+void dns_dyndb_set_zonemgr(dns_dyndb_arguments_t *args, dns_zonemgr_t *zmgr);
+dns_zonemgr_t *dns_dyndb_get_zonemgr(dns_dyndb_arguments_t *args);
+void dns_dyndb_set_task(dns_dyndb_arguments_t *args, isc_task_t *task);
+isc_task_t *dns_dyndb_get_task(dns_dyndb_arguments_t *args);
+void dns_dyndb_set_timermgr(dns_dyndb_arguments_t *args,
+			    isc_timermgr_t *timermgr);
+isc_timermgr_t *dns_dyndb_get_timermgr(dns_dyndb_arguments_t *args);
 
 #endif
