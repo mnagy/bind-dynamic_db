@@ -229,18 +229,18 @@ void
 dns_dynamic_db_cleanup(isc_boolean_t exiting)
 {
 	dyndb_implementation_t *elem;
-	dyndb_implementation_t *next;
+	dyndb_implementation_t *prev;
 
 	RUNTIME_CHECK(isc_once_do(&once, dyndb_initialize) == ISC_R_SUCCESS);
 
 	LOCK(&dyndb_lock);
-	elem = HEAD(dyndb_implementations);
+	elem = TAIL(dyndb_implementations);
 	while (elem != NULL) {
-		next = NEXT(elem, link);
+		prev = PREV(elem, link);
 		UNLINK(dyndb_implementations, elem, link);
 		elem->destroy_function();
 		unload_library(&elem);
-		elem = next;
+		elem = prev;
 	}
 	UNLOCK(&dyndb_lock);
 
