@@ -226,7 +226,7 @@ cleanup:
 }
 
 void
-dns_dynamic_db_cleanup(void)
+dns_dynamic_db_cleanup(isc_boolean_t exiting)
 {
 	dyndb_implementation_t *elem;
 	dyndb_implementation_t *next;
@@ -244,7 +244,8 @@ dns_dynamic_db_cleanup(void)
 	}
 	UNLOCK(&dyndb_lock);
 
-	isc_mutex_destroy(&dyndb_lock);
+	if (exiting == ISC_TRUE)
+		isc_mutex_destroy(&dyndb_lock);
 }
 
 dns_dyndb_arguments_t *

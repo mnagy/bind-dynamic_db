@@ -32,7 +32,7 @@ isc_result_t dns_dynamic_db_load(const char *libname, const char *name,
 				 isc_mem_t *mctx, const char * const *argv,
 				 dns_dyndb_arguments_t *dyndb_args);
 
-void dns_dynamic_db_cleanup(void);
+void dns_dynamic_db_cleanup(isc_boolean_t exiting);
 
 dns_dyndb_arguments_t *dns_dyndb_arguments_create(isc_mem_t *mctx);
 void dns_dyndb_arguments_destroy(isc_mem_t *mctx, dns_dyndb_arguments_t *args);

@@ -3002,6 +3002,7 @@ load_configuration(const char *filename, ns_server_t *server,
 	result = isc_task_beginexclusive(server->task);
 	RUNTIME_CHECK(result == ISC_R_SUCCESS);
 
+	dns_dynamic_db_cleanup(ISC_FALSE);
 	/*
 	 * Parse the global default pseudo-config file.
 	 */
@@ -4239,6 +4240,8 @@ loadconfig(ns_server_t *server) {
 static isc_result_t
 reload(ns_server_t *server) {
 	isc_result_t result;
+
+	dns_dynamic_db_cleanup(ISC_FALSE);
 	CHECK(loadconfig(server));
 
 	result = load_zones(server, ISC_FALSE);
