@@ -115,6 +115,11 @@ version.@O@: version.c
 		-DLIBAGE=${LIBAGE} \
 		-c ${srcdir}/version.c
 
+dynamic_db.@O@: dynamic_db.c
+	${LIBTOOL_MODE_COMPILE} ${CC} ${ALL_CFLAGS} \
+	-DDYNDB_LIBDIR=\"@libdir@/bind/\" \
+	-c ${srcdir}/dynamic_db.c
+
 libdns.@SA@: ${OBJS}
 	${AR} ${ARFLAGS} $@ ${OBJS}
 	${RANLIB} $@

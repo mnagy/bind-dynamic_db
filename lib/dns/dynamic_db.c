@@ -17,10 +17,12 @@
 
 #include <config.h>
 
+#include <isc/buffer.h>
 #include <isc/mem.h>
 #include <isc/mutex.h>
 #include <isc/once.h>
 #include <isc/result.h>
+#include <isc/region.h>
 #include <isc/task.h>
 #include <isc/types.h>
 #include <isc/util.h>
@@ -35,6 +37,10 @@
 
 #if HAVE_DLFCN_H
 #include <dlfcn.h>
+#endif
+
+#ifndef DYNDB_LIBDIR
+#define DYNDB_LIBDIR ""
 #endif
 
 #define CHECK(op)						\
@@ -109,6 +115,9 @@ static isc_result_t
 load_library(isc_mem_t *mctx, const char *filename, dyndb_implementation_t **impp)
 {
 	isc_result_t result;
+	size_t module_size;
+	isc_buffer_t *module_buf = NULL;
+	isc_region_t module_region;
 	void *handle;
 	dyndb_implementation_t *imp;
 	register_func_t register_function = NULL;
@@ -116,7 +125,15 @@ load_library(isc_mem_t *mctx, const char *filename, dyndb_implementation_t **imp
 
 	REQUIRE(impp != NULL && *impp == NULL);
 
-	handle = dlopen(filename, RTLD_LAZY);
+	/* Build up the full path. */
+	module_size = strlen(DYNDB_LIBDIR) + strlen(filename) + 1;
+	CHECK(isc_buffer_allocate(mctx, &module_buf, module_size));
+	isc_buffer_putstr(module_buf, DYNDB_LIBDIR);
+	isc_buffer_putstr(module_buf, filename);
+	isc_buffer_putuint8(module_buf, 0);
+	isc_buffer_region(module_buf, &module_region);
+
+	handle = dlopen((char *)module_region.base, RTLD_LAZY);
 	if (handle == NULL) {
 		isc_log_write(dns_lctx, DNS_LOGCATEGORY_DATABASE,
 			      DNS_LOGMODULE_DYNDB, ISC_LOG_ERROR,
@@ -147,11 +164,11 @@ load_library(isc_mem_t *mctx, const char *filename, dyndb_implementation_t **imp
 
 	*impp = imp;
 
-	return ISC_R_SUCCESS;
-
 cleanup:
-	if (handle != NULL)
+	if (result != ISC_R_SUCCESS && handle != NULL)
 		dlclose(handle);
+	if (module_buf != NULL)
+		isc_buffer_free(&module_buf);
 
 	return result;
 }
